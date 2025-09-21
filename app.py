@@ -157,16 +157,16 @@ st.markdown("---")
 
 # Time series: revenue by time (fixed: select numeric column before sum)
 st.header("Revenue Over Time")
-ts_agg = st.selectbox("Aggregate by", ['Daily', 'Weekly', 'Monthly'], index=1)
+ts_agg = st.selectbox("Aggregate by", ['D', 'W', 'M'], index=1)
 # Ensure revenue is numeric
 df_filt['revenue'] = pd.to_numeric(df_filt['revenue'], errors='coerce').fillna(0.0)
 
-if ts_agg == 'Daily':
-    df_ts = df_filt.set_index('order_datetime')['revenue'].resample('Daily').sum().reset_index()
-elif ts_agg == 'Weekly':
-    df_ts = df_filt.set_index('order_datetime')['revenue'].resample('Weekly').sum().reset_index()
+if ts_agg == 'D':
+    df_ts = df_filt.set_index('order_datetime')['revenue'].resample('D').sum().reset_index()
+elif ts_agg == 'W':
+    df_ts = df_filt.set_index('order_datetime')['revenue'].resample('W').sum().reset_index()
 else:
-    df_ts = df_filt.set_index('order_datetime')['revenue'].resample('Monthly').sum().reset_index()
+    df_ts = df_filt.set_index('order_datetime')['revenue'].resample('M').sum().reset_index()
 
 fig_ts = px.line(df_ts, x='order_datetime', y='revenue', title='Revenue time series', labels={'order_datetime':'Date','revenue':'Revenue (₹)'})
 fig_ts.add_trace(go.Bar(x=df_ts['order_datetime'], y=df_ts['revenue'], name='Revenue (bar)', opacity=0.18))
