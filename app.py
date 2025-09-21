@@ -209,31 +209,61 @@ else:
 
 st.markdown('---')
 
-# RFM segmentation
 # -------------------------
 # RFM segmentation
 # -------------------------
 st.header('RFM Segmentation (customers)')
+
+# snapshot date for recency
 snapshot_date = df['order_datetime'].max() + pd.Timedelta(days=1)
+
+# compute raw RFM metrics
 rfm = df.groupby('customer_id').agg(
     recency_days=('order_datetime', lambda x: (snapshot_date - x.max()).days),
     frequency=('order_id', 'nunique'),
     monetary=('revenue', 'sum')
 ).reset_index()
 
+# safe qcut helper (fallback if too few unique values)
 def safe_qcut(series, q):
     try:
         return pd.qcut(series, q, labels=list(range(1, q+1))).astype(int)
     except Exception:
+        # fallback: use percentile bins on ranks
         ranks = series.rank(method='first', pct=True)
         return pd.cut(ranks, bins=q, labels=list(range(1, q+1))).astype(int)
 
-rfm['r_score'] = safe_qcut(rfm['recency_days'], 5).rsub(6)  # invert recency so recent=5
+# score mapping: r = recency (recent -> higher score), f = frequency, m = monetary
+rfm['r_score'] = safe_qcut(rfm['recency_days'], 5).rsub(6)  # invert so recent -> 5
 rfm['f_score'] = safe_qcut(rfm['frequency'], 5)
 rfm['m_score'] = safe_qcut(rfm['monetary'], 5)
 rfm['rfm_score'] = rfm['r_score'].astype(str) + rfm['f_score'].astype(str) + rfm['m_score'].astype(str)
 
+# define segments from scores, then create column BEFORE aggregating
+def rfm_segment(row):
+    if row['r_score'] >= 4 and row['f_score'] >= 4 and row['m_score'] >= 4:
+        return 'Champions'
+    if row['r_score'] >= 3 and row['f_score'] >= 3:
+        return 'Loyal'
+    if row['r_score'] <= 2 and row['f_score'] >= 4:
+        return 'At Risk (freq)'
+    if row['r_score'] <= 2:
+        return 'Requires Winback'
+    return 'Others'
+
+rfm['segment'] = rfm.apply(rfm_segment, axis=1)
+
+# now safe to compute counts: use rename_axis + reset_index(name=...) to avoid duplicate names
 seg_counts = rfm['segment'].value_counts().rename_axis('segment').reset_index(name='count')
+# ensure columns are unique and ordered
+seg_counts.columns = ['segment', 'count']
+
+# plot and display
+fig_rfm = px.bar(seg_counts, x='segment', y='count', title='RFM customer segments', text_auto=True)
+st.plotly_chart(fig_rfm, use_container_width=True)
+
+st.dataframe(rfm.sort_values('monetary', ascending=False).head(15).style.format({'monetary':'₹{:,.2f}', 'recency_days':'{:,}', 'frequency':'{:,}'}))
+
 # ensure unique column names
 seg_counts.columns = ['segment', 'count']
 
