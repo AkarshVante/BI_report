@@ -1,8 +1,8 @@
 # app.py
-
-"""Robust Business Intelligence Streamlit app (patched).
-- Fixes datetime resample TypeError by selecting numeric columns before aggregation.
-- Adds defensive checks for required columns and parsing.
+"""Patched Sales BI Streamlit app.
+- Ensures seg_counts created after segment column.
+- Adds unique keys to all st.plotly_chart calls to avoid StreamlitDuplicateElementId.
+- Defensive parsing & checks.
 """
 from datetime import datetime, timedelta
 import streamlit as st
@@ -11,7 +11,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
-st.set_page_config(page_title='Sales BI — Dashboard (patched)', layout='wide', initial_sidebar_state='expanded')
+st.set_page_config(page_title='Sales BI — Dashboard (patched keys)', layout='wide', initial_sidebar_state='expanded')
 
 @st.cache_data
 def generate_synthetic_sales(n_customers=1000, start_date='2023-01-01', end_date='2024-12-31'):
@@ -68,7 +68,7 @@ def generate_synthetic_sales(n_customers=1000, start_date='2023-01-01', end_date
     df['order_date'] = df['order_datetime'].dt.date
     return df
 
-st.sidebar.title("Data & Filters (patched)")
+st.sidebar.title("Data & Filters (patched keys)")
 uploaded = st.sidebar.file_uploader("Upload transactions CSV (optional). Required: order_datetime, customer_id, revenue", type=['csv'])
 use_sample = st.sidebar.button("Load synthetic sample data")
 
@@ -170,7 +170,8 @@ else:
 
 fig_ts = px.line(df_ts, x='order_datetime', y='revenue', title='Revenue time series', labels={'order_datetime':'Date','revenue':'Revenue (₹)'})
 fig_ts.add_trace(go.Bar(x=df_ts['order_datetime'], y=df_ts['revenue'], name='Revenue (bar)', opacity=0.18))
-st.plotly_chart(fig_ts, use_container_width=True)
+# unique key for this chart
+st.plotly_chart(fig_ts, use_container_width=True, key='chart_revenue_ts')
 
 st.markdown('---')
 
@@ -180,7 +181,8 @@ left, right = st.columns([2,1])
 with left:
     cat_df = df_filt.groupby('category').agg(revenue=('revenue','sum'), orders=('order_id','nunique')).reset_index().sort_values('revenue', ascending=False)
     fig_cat = px.pie(cat_df, values='revenue', names='category', title='Revenue share by category', hole=0.35)
-    st.plotly_chart(fig_cat, use_container_width=True)
+    # unique key for category pie
+    st.plotly_chart(fig_cat, use_container_width=True, key='chart_category_pie')
     st.dataframe(cat_df.style.format({'revenue':'₹{:,.2f}','orders':'{:,}'}), height=240)
 with right:
     st.subheader('Top 10 Customers by Revenue')
@@ -189,7 +191,7 @@ with right:
 
 st.markdown('---')
 
-# Cohort retention (monthly) - limited to cohorts present in df
+# Cohort retention (monthly)
 st.header('Cohort Retention (monthly)')
 cohort = df[['customer_id','order_datetime']].copy()
 cohort['order_month'] = cohort['order_datetime'].dt.to_period('M').dt.to_timestamp()
@@ -205,41 +207,27 @@ else:
     retention = cohort_pivot.divide(cohort_sizes, axis=0).fillna(0)
     retain_display = retention.copy().iloc[-12:]
     fig_cohort = px.imshow(retain_display, text_auto='.0%', labels=dict(x='Months since cohort', y='Cohort month', color='Retention'), aspect='auto', title='Customer retention by cohort (last 12 cohorts)')
-    st.plotly_chart(fig_cohort, use_container_width=True)
+    st.plotly_chart(fig_cohort, use_container_width=True, key='chart_cohort_retention')
 
 st.markdown('---')
 
-# -------------------------
 # RFM segmentation
-# -------------------------
 st.header('RFM Segmentation (customers)')
-
-# snapshot date for recency
 snapshot_date = df['order_datetime'].max() + pd.Timedelta(days=1)
+rfm = df.groupby('customer_id').agg(recency_days=('order_datetime', lambda x: (snapshot_date - x.max()).days), frequency=('order_id', 'nunique'), monetary=('revenue', 'sum')).reset_index()
 
-# compute raw RFM metrics
-rfm = df.groupby('customer_id').agg(
-    recency_days=('order_datetime', lambda x: (snapshot_date - x.max()).days),
-    frequency=('order_id', 'nunique'),
-    monetary=('revenue', 'sum')
-).reset_index()
-
-# safe qcut helper (fallback if too few unique values)
 def safe_qcut(series, q):
     try:
         return pd.qcut(series, q, labels=list(range(1, q+1))).astype(int)
     except Exception:
-        # fallback: use percentile bins on ranks
         ranks = series.rank(method='first', pct=True)
         return pd.cut(ranks, bins=q, labels=list(range(1, q+1))).astype(int)
 
-# score mapping: r = recency (recent -> higher score), f = frequency, m = monetary
-rfm['r_score'] = safe_qcut(rfm['recency_days'], 5).rsub(6)  # invert so recent -> 5
+rfm['r_score'] = safe_qcut(rfm['recency_days'], 5).rsub(6)
 rfm['f_score'] = safe_qcut(rfm['frequency'], 5)
 rfm['m_score'] = safe_qcut(rfm['monetary'], 5)
 rfm['rfm_score'] = rfm['r_score'].astype(str) + rfm['f_score'].astype(str) + rfm['m_score'].astype(str)
 
-# define segments from scores, then create column BEFORE aggregating
 def rfm_segment(row):
     if row['r_score'] >= 4 and row['f_score'] >= 4 and row['m_score'] >= 4:
         return 'Champions'
@@ -253,40 +241,21 @@ def rfm_segment(row):
 
 rfm['segment'] = rfm.apply(rfm_segment, axis=1)
 
-# now safe to compute counts: use rename_axis + reset_index(name=...) to avoid duplicate names
-seg_counts = rfm['segment'].value_counts().rename_axis('segment').reset_index(name='count')
-# ensure columns are unique and ordered
-seg_counts.columns = ['segment', 'count']
-
-# plot and display
-fig_rfm = px.bar(seg_counts, x='segment', y='count', title='RFM customer segments', text_auto=True)
-st.plotly_chart(fig_rfm, use_container_width=True)
-
-st.dataframe(rfm.sort_values('monetary', ascending=False).head(15).style.format({'monetary':'₹{:,.2f}', 'recency_days':'{:,}', 'frequency':'{:,}'}))
-
-# ensure unique column names
-seg_counts.columns = ['segment', 'count']
-
-def rfm_segment(row):
-    if row['r_score'] >= 4 and row['f_score'] >= 4 and row['m_score'] >= 4:
-        return 'Champions'
-    if row['r_score'] >= 3 and row['f_score'] >= 3:
-        return 'Loyal'
-    if row['r_score'] <= 2 and row['f_score'] >= 4:
-        return 'At Risk (freq)'
-    if row['r_score'] <= 2:
-        return 'Requires Winback'
-    return 'Others'
-
-rfm['segment'] = rfm.apply(rfm_segment, axis=1)
+# compute seg_counts safely after 'segment' created
 seg_counts = rfm['segment'].value_counts().rename_axis('segment').reset_index(name='count')
 seg_counts.columns = ['segment', 'count']
 
+# final assertions to avoid narwhals/plotly errors
+assert 'segment' in seg_counts.columns, "seg_counts missing 'segment' column"
+assert seg_counts.columns.is_unique, f"Duplicate columns detected: {seg_counts.columns.tolist()}"
+
 fig_rfm = px.bar(seg_counts, x='segment', y='count', title='RFM customer segments', text_auto=True)
-st.plotly_chart(fig_rfm, use_container_width=True)
+st.plotly_chart(fig_rfm, use_container_width=True, key='chart_rfm_segments')
 st.dataframe(rfm.sort_values('monetary', ascending=False).head(15).style.format({'monetary':'₹{:,.2f}','recency_days':'{:,}','frequency':'{:,}'}))
 
-# Geo
+st.markdown('---')
+
+# Geo: sales by city
 st.header('Geographic Sales (by city)')
 city_geo = df_filt.groupby(['city','lat','lon']).agg(revenue=('revenue','sum'), orders=('order_id','nunique')).reset_index()
 if city_geo.empty:
@@ -295,7 +264,7 @@ else:
     fig_map = px.scatter_mapbox(city_geo, lat='lat', lon='lon', size='revenue', hover_name='city', hover_data={'revenue':':.0f','orders':':.0f'}, zoom=3, height=400)
     fig_map.update_layout(mapbox_style='open-street-map')
     fig_map.update_layout(margin={'r':0,'t':0,'l':0,'b':0})
-    st.plotly_chart(fig_map, use_container_width=True)
+    st.plotly_chart(fig_map, use_container_width=True, key='chart_geo_city')
 
 st.markdown('---')
 st.header('Export & Storytelling')
