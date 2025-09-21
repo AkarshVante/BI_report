@@ -157,7 +157,7 @@ st.markdown("---")
 
 # Time series: revenue by time (fixed: select numeric column before sum)
 st.header("Revenue Over Time")
-ts_agg = st.selectbox("Aggregate by", ['D', 'W', 'M'], index=1)
+ts_agg = st.selectbox("Aggregate by", ['Daily', 'Weekly', 'Monthaly'], index=1)
 # Ensure revenue is numeric
 df_filt['revenue'] = pd.to_numeric(df_filt['revenue'], errors='coerce').fillna(0.0)
 
