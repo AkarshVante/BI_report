@@ -37,21 +37,21 @@ Perfect as a starter for analytics teams or for demoing product intelligence fea
 
 ---
 
-## 🧩 Visuals (suggested)
+## 🧩 Visuals
 
 Add these files under `assets/` to make the README lively:
 
-* `assets/demo.gif` — short app walkthrough
-* `assets/screenshot_kpis.png` — KPI tiles screenshot
-* `assets/screenshot_cohort.png` — cohort heatmap screenshot
-* `assets/screenshot_map.png` — geographic map screenshot
+* `assets/img_1.jpeg` — short app walkthrough
+* `assets/img_2.jpeg` — Category Breakdown & Top Items
+* `assets/img_3.jpeg` — cohort heatmap screenshot
+* `assets/img_4.jpeg` — RFM Segmentation
+* `assets/img_5.jpeg` — geographic map screenshot
 
-Embed them in the README like:
 
-```md
-![KPIs screenshot](assets/screenshot_kpis.png)
-![Cohort heatmap](assets/screenshot_cohort.png)
-```
+
+![KPIs screenshot](assets/img_1.jpeg)
+![Cohort heatmap](assets/img_3.jpeg)
+
 
 ---
 
