@@ -233,7 +233,9 @@ def rfm_segment(row):
         return 'Requires Winback'
     return 'Others'
 rfm['segment'] = rfm.apply(rfm_segment, axis=1)
-seg_counts = rfm['segment'].value_counts().reset_index().rename(columns={'index':'segment','segment':'count'})
+seg_counts = rfm['segment'].value_counts().rename_axis('segment').reset_index(name='count')
+    # ensure unique column names
+    seg_counts.columns = ['segment','count']
 fig_rfm = px.bar(seg_counts, x='segment', y='count', title='RFM customer segments', text_auto=True)
 st.plotly_chart(fig_rfm, use_container_width=True)
 st.dataframe(rfm.sort_values('monetary', ascending=False).head(15).style.format({'monetary':'₹{:,.2f}','recency_days':'{:,}','frequency':'{:,}'}))
